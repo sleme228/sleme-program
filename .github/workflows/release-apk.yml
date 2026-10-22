@@ -1,0 +1,78 @@
+name: Build and publish APK
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Extract Android project sources
+        run: |
+          unzip -o sleme-program-source.zip -d .
+          chmod +x gradlew
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Configure all Android signing secrets before publishing a release."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sleme-release.jks"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/sleme-release.jks"
+            echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "ANDROID_KEY_ALIAS=$KEY_ALIAS"
+            echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate release tag
+        id: version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          RELEASE_VERSION_CODE: ${{ github.run_number }}
+        run: |
+          if [[ ! "$TAG_NAME" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Use a numeric version tag such as v1.2.3."
+            exit 1
+          fi
+          echo "name=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "code=$((RELEASE_VERSION_CODE + 1))" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed release APK
+        run: >-
+          ./gradlew :app:assembleRelease
+          -PreleaseVersionName=${{ steps.version.outputs.name }}
+          -PreleaseVersionCode=${{ steps.version.outputs.code }}
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG_NAME" \
+            app/build/outputs/apk/release/app-release.apk \
+            --title "sleme program $TAG_NAME" \
+            --generate-notes
