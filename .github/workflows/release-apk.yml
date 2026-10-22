@@ -40,9 +40,9 @@ jobs:
             echo "::error::Configure all Android signing secrets before publishing a release."
             exit 1
           fi
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sleme-release.jks"
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sleme-release.p12"
           {
-            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/sleme-release.jks"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/sleme-release.p12"
             echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
             echo "ANDROID_KEY_ALIAS=$KEY_ALIAS"
             echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD"
